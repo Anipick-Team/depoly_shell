@@ -99,6 +99,7 @@ def update_deploy_app():
         if not os.path.exists(src_dir):
             st.error("저장소 내에 'deploy' 폴더가 없습니다.")
             return
+        copied_paths = []
         for item in os.listdir(src_dir):
             s = os.path.join(src_dir, item)
             d = os.path.join(target_dir, item)
@@ -106,9 +107,22 @@ def update_deploy_app():
                 if os.path.exists(d):
                     shutil.rmtree(d)
                 shutil.copytree(s, d)
+                copied_paths.append(d)
             else:
                 shutil.copy2(s, d)
-        st.success("deploy_app이 최신 상태로 업데이트되었습니다!")
+                copied_paths.append(d)
+        # 복사된 모든 파일/폴더에 실행권한 부여
+        def chmod_recursive(path):
+            if os.path.isdir(path):
+                for root, dirs, files in os.walk(path):
+                    for name in dirs + files:
+                        os.chmod(os.path.join(root, name), 0o755)
+                os.chmod(path, 0o755)
+            else:
+                os.chmod(path, 0o755)
+        for p in copied_paths:
+            chmod_recursive(p)
+        st.success("deploy_app이 최신 상태로 업데이트되었고, 실행 권한도 부여되었습니다!")
 
 # --- UI 정의 ---
 
