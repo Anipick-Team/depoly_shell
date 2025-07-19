@@ -152,7 +152,7 @@ with st.sidebar:
         run_script("restart.sh")
 
 # 메인 페이지 로그
-st.title("실시간 로그 test")
+st.title("실시간 로그")
 
 # 프로세스 상태 확인
 if st.session_state.is_running:
