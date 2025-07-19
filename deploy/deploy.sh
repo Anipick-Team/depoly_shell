@@ -17,7 +17,7 @@ touch $PID_FILE
 # 이전 빌드 로그 초기화
 > $BUILD_LOG_FILE
 
-echo "=======================test==========================" >> $BUILD_LOG_FILE
+echo "=================================================" >> $BUILD_LOG_FILE
 echo " 배포 시작: $(date)" >> $BUILD_LOG_FILE
 echo " 브랜치: $BRANCH" >> $BUILD_LOG_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
