@@ -4,6 +4,8 @@ import requests
 import os
 import time
 from dotenv import load_dotenv
+import shutil
+import tempfile
 
 # --- 초기 설정 ---
 load_dotenv("/home/deploy/env")
@@ -63,7 +65,7 @@ def run_script(script_name, branch=None):
     cmd = [os.path.join(BASE_DIR, script_name)]
     if branch:
         cmd.append(branch)
-
+    
     if script_name == 'deploy.sh':
         with open(BUILD_LOG_FILE, "w") as f:
             f.write("")
@@ -81,19 +83,46 @@ def read_log_content(file_path):
     except FileNotFoundError:
         return "로그 파일이 아직 생성되지 않았습니다."
 
+# --- deploy_app 업데이트 함수 ---
+def update_deploy_app():
+    repo_url = "https://github.com/Anipick-Team/depoly_shell.git"
+    target_dir = BASE_DIR
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 저장소 클론
+        clone_cmd = ["git", "clone", "--depth", "1", repo_url, tmpdir]
+        result = subprocess.run(clone_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            st.error(f"저장소 클론 실패: {result.stderr}")
+            return
+        # deploy 디렉토리 내 파일 복사
+        src_dir = os.path.join(tmpdir, "deploy")
+        if not os.path.exists(src_dir):
+            st.error("저장소 내에 'deploy' 폴더가 없습니다.")
+            return
+        for item in os.listdir(src_dir):
+            s = os.path.join(src_dir, item)
+            d = os.path.join(target_dir, item)
+            if os.path.isdir(s):
+                if os.path.exists(d):
+                    shutil.rmtree(d)
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+        st.success("deploy_app이 최신 상태로 업데이트되었습니다!")
+
 # --- UI 정의 ---
 
 # 사이드바 컨트롤
 with st.sidebar:
     st.title("애니픽 배포 관리")
-
+    
     branches = get_branches()
     selected_branch = st.selectbox(
-        "브랜치 선택",
-        branches,
+        "브랜치 선택", 
+        branches, 
         disabled=st.session_state.is_running
     )
-
+    
     st.markdown("---")
 
     if st.button("배포", key="deploy", disabled=st.session_state.is_running, use_container_width=True):
@@ -128,6 +157,13 @@ st.subheader("애플리케이션 로그 (Spring)")
 spring_log_container = st.container(height=400)
 spring_log_content = read_log_content(SPRING_LOG_FILE)
 spring_log_container.code(spring_log_content, language='log')
+
+# --- 상단 우측에 업데이트 버튼 배치 ---
+col1, col2 = st.columns([8, 1])
+with col2:
+    if st.button("deploy_app 업데이트", use_container_width=True):
+        update_deploy_app()
+        st.rerun()
 
 # 자동 새로고침
 time.sleep(3)
