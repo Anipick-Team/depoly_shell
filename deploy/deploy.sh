@@ -8,6 +8,7 @@ LOG_DIR="/home/logs"
 BUILD_LOG_FILE="/home/tools/deploy/build.log"
 PROJECT_DIR="/home/tools/deploy/anipick-backend"
 PID_FILE="/home/tools/deploy/anipick.pid"
+LAST_COMMIT=$(git log -1 --pretty=format:'%h - %s')
 
 # 로그 디렉토리 및 파일 생성
 mkdir -p $LOG_DIR
@@ -20,6 +21,7 @@ touch $PID_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
 echo " 배포 시작: $(date)" >> $BUILD_LOG_FILE
 echo " 브랜치: $BRANCH" >> $BUILD_LOG_FILE
+echo " 마지막 커밋: $LAST_COMMIT"      >> $BUILD_LOG_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
 
 # 프로젝트 소스 코드 처리
