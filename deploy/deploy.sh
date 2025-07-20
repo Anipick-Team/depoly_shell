@@ -20,8 +20,6 @@ touch $PID_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
 echo " 배포 시작: $(date)" >> $BUILD_LOG_FILE
 echo " 브랜치: $BRANCH" >> $BUILD_LOG_FILE
-LAST_COMMIT=$(git log -1 --pretty=format:'%h - %s')
-echo " 마지막 커밋: $LAST_COMMIT"      >> $BUILD_LOG_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
 
 # 프로젝트 소스 코드 처리
@@ -82,4 +80,6 @@ echo $! > $PID_FILE
 
 echo "=================================================" >> $BUILD_LOG_FILE
 echo " 배포 완료: $(date)" >> $BUILD_LOG_FILE
+LAST_COMMIT=$(git log -1 --pretty=format:'%h - %s')
+echo " 마지막 커밋: $LAST_COMMIT"      >> $BUILD_LOG_FILE
 echo "=================================================" >> $BUILD_LOG_FILE
