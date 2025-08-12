@@ -40,7 +40,7 @@ fi
 # 빌드
 echo "Gradle 빌드를 시작합니다..." >> $BUILD_LOG_FILE
 chmod +x gradlew
-./gradlew clean build -x test >> $BUILD_LOG_FILE 2>&1
+./gradlew clean build >> $BUILD_LOG_FILE 2>&1
 
 # 빌드 성공 여부 확인
 if [ $? -ne 0 ]; then
