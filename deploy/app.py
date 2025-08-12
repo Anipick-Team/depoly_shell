@@ -71,16 +71,14 @@ if 'process' not in st.session_state:
 def get_branches():
     """GitHub API를 사용하여 전체 브랜치 목록을 페이징 처리로 모두 가져옵니다."""
     url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/branches"
-    headers = {}
-    if GITHUB_TOKEN:
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     branches = []
     page = 1
     per_page = 100
     try:
         while True:
             params = {"per_page": per_page, "page": page}
-            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
             if not data:
