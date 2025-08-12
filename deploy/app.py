@@ -57,7 +57,7 @@ def load_auth_config(path: str):
 auth_config = load_auth_config(CONFIG_PATH)
 
 authenticator = stauth.Authenticate(
-    auth_config["usernames"],                     # 현재 파일 구조에 맞춤 (루트에 usernames)
+    auth_config["credentials"]["usernames"],                     # 현재 파일 구조에 맞춤 (루트에 usernames)
     auth_config["cookie"]["name"],
     auth_config["cookie"]["key"],
     auth_config["cookie"]["expiry_days"],
