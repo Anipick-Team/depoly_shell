@@ -36,59 +36,31 @@ if "process" not in st.session_state:
     st.session_state.process = None
 
 # =========================
-# 인증 설정 로드 & 정규화
+# 인증 설정 로드
 # =========================
 def load_auth_config(path: str) -> dict:
     try:
         with open(path, "r", encoding="utf-8") as f:
             cfg = yaml.load(f, Loader=SafeLoader) or {}
-        # 필수 최상위 키 점검 (cookie는 필수)
+        # 필수 cookie 키 점검
         if "cookie" not in cfg or not isinstance(cfg["cookie"], dict):
             raise KeyError("config.yaml에 'cookie' 키가 없습니다.")
         for ck in ("name", "key", "expiry_days"):
             if ck not in cfg["cookie"]:
                 raise KeyError(f"config.yaml cookie에 '{ck}' 키가 없습니다.")
+        # credentials.usernames 점검
+        if "credentials" not in cfg or "usernames" not in cfg["credentials"]:
+            raise KeyError("config.yaml에 'credentials.usernames' 키가 없습니다.")
         return cfg
     except Exception as e:
         st.error(f"인증 설정(config.yaml) 로드 실패: {e}")
         st.stop()
 
-def resolve_credentials(cfg: dict) -> dict:
-    """
-    streamlit-authenticator의 첫 번째 인자는 credentials(dict)여야 함.
-    - 선호: cfg['credentials']['usernames']
-    - 대안: cfg['usernames']만 있을 때는 {'credentials': {'usernames': ...}} 형태로 감싸서 변환
-    """
-    # 1) credentials.usernames 형태 지원
-    creds = cfg.get("credentials")
-    if isinstance(creds, dict) and isinstance(creds.get("usernames"), dict) and creds["usernames"]:
-        return creds
-
-    # 2) 루트 usernames만 있을 경우 감싸서 반환
-    root_users = cfg.get("usernames")
-    if isinstance(root_users, dict) and root_users:
-        return {"usernames": root_users}
-
-    # 3) 실패 시 키 힌트 제공
-    top = list(cfg.keys())
-    cred_keys = list(creds.keys()) if isinstance(creds, dict) else None
-    raise KeyError(f"Could not find usernames. top_keys={top}, credentials_keys={cred_keys}")
-
 auth_config = load_auth_config(CONFIG_PATH)
 
-try:
-    credentials_dict = resolve_credentials(auth_config)
-except Exception as e:
-    st.error(f"인증 설정(config.yaml) 파싱 실패: {e}")
-    # 디버깅 도움: config 경로와 일부 값 노출
-    with st.expander("Debug info (safe)"):
-        st.write("CONFIG_PATH:", CONFIG_PATH)
-        st.write("cookie keys:", list(auth_config.get("cookie", {}).keys()))
-        st.write("top keys:", list(auth_config.keys()))
-    st.stop()
-
+# streamlit-authenticator 초기화 (credentials dict 전체를 전달)
 authenticator = stauth.Authenticate(
-    credentials_dict,                          # 표준 credentials dict
+    auth_config["credentials"],                 # {'usernames': {...}} 형태여야 함
     auth_config["cookie"]["name"],
     auth_config["cookie"]["key"],
     auth_config["cookie"]["expiry_days"],
@@ -265,7 +237,6 @@ def render_app():
 name, authentication_status, username = authenticator.login("Login", "main")
 
 if authentication_status:
-    # 로그인 성공 -> 본문 렌더
     st.sidebar.success(f"Welcome {name}")
     render_app()
 elif authentication_status is False:
