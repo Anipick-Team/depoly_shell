@@ -36,16 +36,15 @@ if "process" not in st.session_state:
     st.session_state.process = None
 
 # =========================
-# 인증 설정 로드 & 초기화
+# 인증 설정 로드 & 정규화
 # =========================
-def load_auth_config(path: str):
+def load_auth_config(path: str) -> dict:
     try:
-        with open(path, "r") as f:
-            cfg = yaml.load(f, Loader=SafeLoader)
-        # 필수 키 점검
-        for k in ("usernames", "cookie", "preauthorized"):
-            if k not in cfg:
-                raise KeyError(f"config.yaml에 '{k}' 키가 없습니다.")
+        with open(path, "r", encoding="utf-8") as f:
+            cfg = yaml.load(f, Loader=SafeLoader) or {}
+        # 필수 최상위 키 점검 (cookie는 필수)
+        if "cookie" not in cfg or not isinstance(cfg["cookie"], dict):
+            raise KeyError("config.yaml에 'cookie' 키가 없습니다.")
         for ck in ("name", "key", "expiry_days"):
             if ck not in cfg["cookie"]:
                 raise KeyError(f"config.yaml cookie에 '{ck}' 키가 없습니다.")
@@ -54,10 +53,42 @@ def load_auth_config(path: str):
         st.error(f"인증 설정(config.yaml) 로드 실패: {e}")
         st.stop()
 
+def resolve_credentials(cfg: dict) -> dict:
+    """
+    streamlit-authenticator의 첫 번째 인자는 credentials(dict)여야 함.
+    - 선호: cfg['credentials']['usernames']
+    - 대안: cfg['usernames']만 있을 때는 {'credentials': {'usernames': ...}} 형태로 감싸서 변환
+    """
+    # 1) credentials.usernames 형태 지원
+    creds = cfg.get("credentials")
+    if isinstance(creds, dict) and isinstance(creds.get("usernames"), dict) and creds["usernames"]:
+        return creds
+
+    # 2) 루트 usernames만 있을 경우 감싸서 반환
+    root_users = cfg.get("usernames")
+    if isinstance(root_users, dict) and root_users:
+        return {"usernames": root_users}
+
+    # 3) 실패 시 키 힌트 제공
+    top = list(cfg.keys())
+    cred_keys = list(creds.keys()) if isinstance(creds, dict) else None
+    raise KeyError(f"Could not find usernames. top_keys={top}, credentials_keys={cred_keys}")
+
 auth_config = load_auth_config(CONFIG_PATH)
 
+try:
+    credentials_dict = resolve_credentials(auth_config)
+except Exception as e:
+    st.error(f"인증 설정(config.yaml) 파싱 실패: {e}")
+    # 디버깅 도움: config 경로와 일부 값 노출
+    with st.expander("Debug info (safe)"):
+        st.write("CONFIG_PATH:", CONFIG_PATH)
+        st.write("cookie keys:", list(auth_config.get("cookie", {}).keys()))
+        st.write("top keys:", list(auth_config.keys()))
+    st.stop()
+
 authenticator = stauth.Authenticate(
-    auth_config["credentials"]["usernames"],                     # 현재 파일 구조에 맞춤 (루트에 usernames)
+    credentials_dict,                          # 표준 credentials dict
     auth_config["cookie"]["name"],
     auth_config["cookie"]["key"],
     auth_config["cookie"]["expiry_days"],
@@ -172,7 +203,7 @@ def render_app():
     with st.sidebar:
         st.title("애니픽 배포 관리")
 
-        # Logout 버튼 (사이드바 상단에 배치)
+        # Logout 버튼
         authenticator.logout("Logout", "sidebar")
 
         branches = get_branches()
