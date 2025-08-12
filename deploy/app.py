@@ -21,6 +21,44 @@ BASE_DIR = "/home/tools/deploy"
 LOG_DIR = "/home/logs"
 BUILD_LOG_FILE = os.path.join(BASE_DIR, "build.log")
 SPRING_LOG_FILE = os.path.join(LOG_DIR, "springboot.log")
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
+
+# =========================
+# 로그인 게이트 (streamlit-authenticator 최신 시그니처)
+# =========================
+import yaml
+from yaml.loader import SafeLoader
+import streamlit_authenticator as stauth
+
+# config.yaml 로드
+with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    _cfg = yaml.load(f, Loader=SafeLoader) or {}
+
+# 첫 인자: credentials 전체(dict) -> {'usernames': {...}}
+authenticator = stauth.Authenticate(
+    _cfg["credentials"],
+    _cfg["cookie"]["name"],
+    _cfg["cookie"]["key"],
+    _cfg["cookie"]["expiry_days"],
+    _cfg.get("preauthorized", {})
+)
+
+# 최신 버전: 위치는 첫/유일 인자 or 키워드로, 폼 제목은 fields로 지정
+name, authentication_status, username = authenticator.login(
+    location="main",
+    fields={"Form name": "Login"}
+)
+
+# 접근 제어
+if authentication_status:
+    st.sidebar.success(f"Welcome {name}")
+    authenticator.logout("Logout", "sidebar")
+elif authentication_status is False:
+    st.error("Username/password is incorrect")
+    st.stop()
+else:
+    st.warning("Please enter your username and password")
+    st.stop()
 
 # --- 세션 상태 초기화 ---
 if 'is_running' not in st.session_state:
@@ -33,14 +71,16 @@ if 'process' not in st.session_state:
 def get_branches():
     """GitHub API를 사용하여 전체 브랜치 목록을 페이징 처리로 모두 가져옵니다."""
     url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/branches"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {}
+    if GITHUB_TOKEN:
+        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     branches = []
     page = 1
     per_page = 100
     try:
         while True:
             params = {"per_page": per_page, "page": page}
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
             if not data:
@@ -65,7 +105,7 @@ def run_script(script_name, branch=None):
     cmd = [os.path.join(BASE_DIR, script_name)]
     if branch:
         cmd.append(branch)
-    
+
     if script_name == 'deploy.sh':
         with open(BUILD_LOG_FILE, "w") as f:
             f.write("")
@@ -129,14 +169,14 @@ def update_deploy_app():
 # 사이드바 컨트롤
 with st.sidebar:
     st.title("애니픽 배포 관리")
-    
+
     branches = get_branches()
     selected_branch = st.selectbox(
-        "브랜치 선택", 
-        branches, 
+        "브랜치 선택",
+        branches,
         disabled=st.session_state.is_running
     )
-    
+
     st.markdown("---")
 
     if st.button("배포", key="deploy", disabled=st.session_state.is_running, use_container_width=True):
