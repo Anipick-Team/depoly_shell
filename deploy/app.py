@@ -2,6 +2,7 @@ import streamlit as st
 import subprocess
 import requests
 import os
+import time
 from dotenv import load_dotenv
 import shutil
 import tempfile
@@ -29,23 +30,26 @@ import yaml
 from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
 
+# config.yaml 로드
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     _cfg = yaml.load(f, Loader=SafeLoader) or {}
 
+# 첫 인자: credentials 전체(dict) -> {'usernames': {...}}
 authenticator = stauth.Authenticate(
-    _cfg["credentials"],              # {'usernames': {...}} 전체 dict
+    _cfg["credentials"],
     _cfg["cookie"]["name"],
     _cfg["cookie"]["key"],
     _cfg["cookie"]["expiry_days"],
     _cfg.get("preauthorized", {})
 )
 
-# 로그인 폼 (main 영역 표시, 제목은 fields로)
+# 최신 버전: 위치는 첫/유일 인자 or 키워드로, 폼 제목은 fields로 지정
 name, authentication_status, username = authenticator.login(
     location="main",
     fields={"Form name": "Login"}
 )
 
+# 접근 제어
 if authentication_status:
     st.sidebar.success(f"Welcome {name}")
     authenticator.logout("Logout", "sidebar")
@@ -67,16 +71,14 @@ if 'process' not in st.session_state:
 def get_branches():
     """GitHub API를 사용하여 전체 브랜치 목록을 페이징 처리로 모두 가져옵니다."""
     url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/branches"
-    headers = {}
-    if GITHUB_TOKEN:
-        headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     branches = []
     page = 1
     per_page = 100
     try:
         while True:
             params = {"per_page": per_page, "page": page}
-            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response = requests.get(url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
             if not data:
@@ -109,8 +111,7 @@ def run_script(script_name, branch=None):
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     st.session_state.process = process
     st.session_state.is_running = True
-    # 여기서는 rerun 호출 안 함 (아래 autorefresh가 갱신)
-    # st.rerun()
+    st.rerun()
 
 def read_log_content(file_path):
     """로그 파일을 읽어 내용을 반환합니다."""
@@ -163,7 +164,7 @@ def update_deploy_app():
 
 # --- UI 정의 ---
 
-# 사이드바 컨트롤 (업데이트 버튼은 여기 한 곳만)
+# 사이드바 컨트롤
 with st.sidebar:
     st.title("애니픽 배포 관리")
 
@@ -188,10 +189,6 @@ with st.sidebar:
         st.toast("서버 재시작 시작...", icon="⏳")
         run_script("restart.sh")
 
-    if st.button("deploy_app 업데이트", key="update_deploy", use_container_width=True):
-        update_deploy_app()
-        # 여기서 rerun 호출 안 함. 아래 autorefresh가 업데이트함.
-
 # 메인 페이지 로그
 st.title("실시간 로그")
 
@@ -213,5 +210,13 @@ spring_log_container = st.container(height=400)
 spring_log_content = read_log_content(SPRING_LOG_FILE)
 spring_log_container.code(spring_log_content, language='log')
 
-# --- 자동 새로고침 (3초) ---
-st.experimental_autorefresh(interval=3000, key="auto_refresh")
+# --- 상단 우측에 업데이트 버튼 배치 ---
+col1, col2 = st.columns([8, 1])
+with col2:
+    if st.button("deploy_app 업데이트", use_container_width=True):
+        update_deploy_app()
+        st.rerun()
+
+# 자동 새로고침
+time.sleep(3)
+st.rerun()
