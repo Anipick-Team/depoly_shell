@@ -60,7 +60,7 @@ auth_config = load_auth_config(CONFIG_PATH)
 
 # streamlit-authenticator 초기화 (credentials dict 전체를 전달)
 authenticator = stauth.Authenticate(
-    auth_config["credentials"],                 # {'usernames': {...}} 형태여야 함
+    auth_config["credentials"]["usernames"],                 # {'usernames': {...}} 형태여야 함
     auth_config["cookie"]["name"],
     auth_config["cookie"]["key"],
     auth_config["cookie"]["expiry_days"],
