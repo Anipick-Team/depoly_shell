@@ -1,11 +1,17 @@
-import streamlit as st
-import subprocess
-import requests
 import os
 import time
-from dotenv import load_dotenv
 import shutil
 import tempfile
+import subprocess
+import requests
+
+import streamlit as st
+from dotenv import load_dotenv
+
+# --- Auth imports ---
+import yaml
+from yaml.loader import SafeLoader
+import streamlit_authenticator as stauth
 
 # --- 초기 설정 ---
 load_dotenv("/home/deploy/env")
@@ -21,40 +27,75 @@ BASE_DIR = "/home/tools/deploy"
 LOG_DIR = "/home/logs"
 BUILD_LOG_FILE = os.path.join(BASE_DIR, "build.log")
 SPRING_LOG_FILE = os.path.join(LOG_DIR, "springboot.log")
+CONFIG_PATH = os.path.join(BASE_DIR, "config.yaml")
 
 # --- 세션 상태 초기화 ---
-if 'is_running' not in st.session_state:
+if "is_running" not in st.session_state:
     st.session_state.is_running = False
-if 'process' not in st.session_state:
+if "process" not in st.session_state:
     st.session_state.process = None
 
-# --- 함수 정의 ---
+# =========================
+# 인증 설정 로드 & 초기화
+# =========================
+def load_auth_config(path: str):
+    try:
+        with open(path, "r") as f:
+            cfg = yaml.load(f, Loader=SafeLoader)
+        # 필수 키 점검
+        for k in ("usernames", "cookie", "preauthorized"):
+            if k not in cfg:
+                raise KeyError(f"config.yaml에 '{k}' 키가 없습니다.")
+        for ck in ("name", "key", "expiry_days"):
+            if ck not in cfg["cookie"]:
+                raise KeyError(f"config.yaml cookie에 '{ck}' 키가 없습니다.")
+        return cfg
+    except Exception as e:
+        st.error(f"인증 설정(config.yaml) 로드 실패: {e}")
+        st.stop()
+
+auth_config = load_auth_config(CONFIG_PATH)
+
+authenticator = stauth.Authenticate(
+    auth_config["usernames"],                     # 현재 파일 구조에 맞춤 (루트에 usernames)
+    auth_config["cookie"]["name"],
+    auth_config["cookie"]["key"],
+    auth_config["cookie"]["expiry_days"],
+    auth_config.get("preauthorized", {})
+)
+
+# =========================
+# 앱 본문 (인증 후 렌더)
+# =========================
 @st.cache_data(ttl=300)
 def get_branches():
     """GitHub API를 사용하여 전체 브랜치 목록을 페이징 처리로 모두 가져옵니다."""
     url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/branches"
-    headers = {"Authorization": f"token {GITHUB_TOKEN}"}
+    headers = {}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"token {GITHUB_TOKEN}"
+
     branches = []
     page = 1
     per_page = 100
     try:
         while True:
             params = {"per_page": per_page, "page": page}
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(url, headers=headers, params=params, timeout=15)
             response.raise_for_status()
             data = response.json()
             if not data:
                 break
-            branches.extend([branch['name'] for branch in data])
+            branches.extend([branch["name"] for branch in data])
             if len(data) < per_page:
                 break
             page += 1
-        if 'main' not in branches:
-            branches.insert(0, 'main')
+        if "main" not in branches:
+            branches.insert(0, "main")
         return branches
     except requests.exceptions.RequestException as e:
         st.sidebar.error(f"GitHub 브랜치 로딩 실패: {e}")
-        return ['main']
+        return ["main"]
 
 def run_script(script_name, branch=None):
     """쉘 스크립트를 백그라운드에서 실행합니다."""
@@ -65,8 +106,8 @@ def run_script(script_name, branch=None):
     cmd = [os.path.join(BASE_DIR, script_name)]
     if branch:
         cmd.append(branch)
-    
-    if script_name == 'deploy.sh':
+
+    if script_name == "deploy.sh":
         with open(BUILD_LOG_FILE, "w") as f:
             f.write("")
 
@@ -83,7 +124,6 @@ def read_log_content(file_path):
     except FileNotFoundError:
         return "로그 파일이 아직 생성되지 않았습니다."
 
-# --- deploy_app 업데이트 함수 ---
 def update_deploy_app():
     repo_url = "https://github.com/Anipick-Team/depoly_shell.git"
     target_dir = BASE_DIR
@@ -111,6 +151,7 @@ def update_deploy_app():
             else:
                 shutil.copy2(s, d)
                 copied_paths.append(d)
+
         # 복사된 모든 파일/폴더에 실행권한 부여
         def chmod_recursive(path):
             if os.path.isdir(path):
@@ -120,65 +161,83 @@ def update_deploy_app():
                 os.chmod(path, 0o755)
             else:
                 os.chmod(path, 0o755)
+
         for p in copied_paths:
             chmod_recursive(p)
+
         st.success("deploy_app이 최신 상태로 업데이트되었고, 실행 권한도 부여되었습니다!")
 
-# --- UI 정의 ---
+def render_app():
+    # 사이드바 컨트롤
+    with st.sidebar:
+        st.title("애니픽 배포 관리")
 
-# 사이드바 컨트롤
-with st.sidebar:
-    st.title("애니픽 배포 관리")
-    
-    branches = get_branches()
-    selected_branch = st.selectbox(
-        "브랜치 선택", 
-        branches, 
-        disabled=st.session_state.is_running
-    )
-    
-    st.markdown("---")
+        # Logout 버튼 (사이드바 상단에 배치)
+        authenticator.logout("Logout", "sidebar")
 
-    if st.button("배포", key="deploy", disabled=st.session_state.is_running, use_container_width=True):
-        st.toast(f"'{selected_branch}' 브랜치 배포 시작...", icon="⏳")
-        run_script("deploy.sh", selected_branch)
+        branches = get_branches()
+        selected_branch = st.selectbox(
+            "브랜치 선택",
+            branches,
+            disabled=st.session_state.is_running
+        )
 
-    if st.button("서버 중지", key="stop", disabled=st.session_state.is_running, use_container_width=True):
-        st.toast("서버 중지 시작...", icon="⏳")
-        run_script("stop.sh")
+        st.markdown("---")
 
-    if st.button("재시작", key="restart", disabled=st.session_state.is_running, use_container_width=True):
-        st.toast("서버 재시작 시작...", icon="⏳")
-        run_script("restart.sh")
+        if st.button("배포", key="deploy", disabled=st.session_state.is_running, use_container_width=True):
+            st.toast(f"'{selected_branch}' 브랜치 배포 시작...", icon="⏳")
+            run_script("deploy.sh", selected_branch)
 
-# 메인 페이지 로그
-st.title("실시간 로그")
+        if st.button("서버 중지", key="stop", disabled=st.session_state.is_running, use_container_width=True):
+            st.toast("서버 중지 시작...", icon="⏳")
+            run_script("stop.sh")
 
-# 프로세스 상태 확인
-if st.session_state.is_running:
-    if st.session_state.process and st.session_state.process.poll() is not None:
-        st.session_state.is_running = False
-        st.session_state.process = None
-        st.toast("스크립트 실행이 완료되었습니다!", icon="✅")
+        if st.button("재시작", key="restart", disabled=st.session_state.is_running, use_container_width=True):
+            st.toast("서버 재시작 시작...", icon="⏳")
+            run_script("restart.sh")
 
-# 로그 표시 영역
-st.subheader("빌드 로그")
-build_log_container = st.container(height=400)
-build_log_content = read_log_content(BUILD_LOG_FILE)
-build_log_container.code(build_log_content, language='log')
+    # 메인 페이지
+    st.title("실시간 로그")
 
-st.subheader("애플리케이션 로그 (Spring)")
-spring_log_container = st.container(height=400)
-spring_log_content = read_log_content(SPRING_LOG_FILE)
-spring_log_container.code(spring_log_content, language='log')
+    # 프로세스 상태 확인
+    if st.session_state.is_running:
+        if st.session_state.process and st.session_state.process.poll() is not None:
+            st.session_state.is_running = False
+            st.session_state.process = None
+            st.toast("스크립트 실행이 완료되었습니다!", icon="✅")
 
-# --- 상단 우측에 업데이트 버튼 배치 ---
-col1, col2 = st.columns([8, 1])
-with col2:
-    if st.button("deploy_app 업데이트", use_container_width=True):
-        update_deploy_app()
-        st.rerun()
+    # 로그 표시 영역
+    st.subheader("빌드 로그")
+    build_log_container = st.container(height=400)
+    build_log_content = read_log_content(BUILD_LOG_FILE)
+    build_log_container.code(build_log_content, language="log")
 
-# 자동 새로고침
-time.sleep(3)
-st.rerun()
+    st.subheader("애플리케이션 로그 (Spring)")
+    spring_log_container = st.container(height=400)
+    spring_log_content = read_log_content(SPRING_LOG_FILE)
+    spring_log_container.code(spring_log_content, language="log")
+
+    # 상단 우측 버튼
+    col1, col2 = st.columns([8, 1])
+    with col2:
+        if st.button("deploy_app 업데이트", use_container_width=True):
+            update_deploy_app()
+            st.rerun()
+
+    # 자동 새로고침
+    time.sleep(3)
+    st.rerun()
+
+# =========================
+# 로그인 흐름
+# =========================
+name, authentication_status, username = authenticator.login("Login", "main")
+
+if authentication_status:
+    # 로그인 성공 -> 본문 렌더
+    st.sidebar.success(f"Welcome {name}")
+    render_app()
+elif authentication_status is False:
+    st.error("Username/password is incorrect")
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
